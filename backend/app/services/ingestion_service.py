@@ -3,6 +3,7 @@ import json
 import logging
 
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ingestion_run import IngestionRun
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 _is_running = False
 _current_stage: str = ""
 _current_stage_detail: str = ""
+_last_error: str | None = None
 
 
 def is_running() -> bool:
@@ -33,42 +35,69 @@ _llm_ref: "LLMService | None" = None
 
 
 def get_progress() -> dict:
-    base = {"stage": _current_stage, "detail": _current_stage_detail}
+    base = {"stage": _current_stage, "detail": _current_stage_detail, "last_error": _last_error}
     if _llm_ref is not None:
         base.update(_llm_ref.get_session_stats())
     return base
 
 
+def _is_db_locked(exc: Exception) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
+async def _create_run_with_retry(db: AsyncSession, triggered_by: str, attempts: int = 5) -> IngestionRun:
+    for attempt in range(attempts):
+        run = IngestionRun(triggered_by=triggered_by, status="running", started_at=utcnow())
+        db.add(run)
+        try:
+            await db.commit()
+            await db.refresh(run)
+            return run
+        except OperationalError as exc:
+            await db.rollback()
+            if not _is_db_locked(exc) or attempt == attempts - 1:
+                raise
+            wait = 0.5 * (attempt + 1)
+            logger.warning("Database locked while creating ingestion run; retrying in %.1fs", wait)
+            await asyncio.sleep(wait)
+    raise RuntimeError("Failed to create ingestion run")
+
+
 async def run_ingestion(db: AsyncSession, llm: LLMService, triggered_by: str = "manual") -> int:
-    global _is_running, _current_stage, _current_stage_detail, _llm_ref
+    global _is_running, _current_stage, _current_stage_detail, _llm_ref, _last_error
     if _is_running:
         raise RuntimeError("Ingestion is already running")
     _is_running = True
     _llm_ref = llm
+    _last_error = None
+    run_id: int | None = None
 
-    run = IngestionRun(triggered_by=triggered_by, status="running", started_at=utcnow())
-    db.add(run)
-    await db.commit()
-    await db.refresh(run)
-    run_id = run.id
-
-    llm.reset_session()
     try:
+        run = await _create_run_with_retry(db, triggered_by)
+        run_id = run.id
+        llm.reset_session()
         await _execute_pipeline(db, llm, run_id)
     except Exception as e:
         logger.exception("Ingestion pipeline failed")
-        result = await db.execute(select(IngestionRun).where(IngestionRun.id == run_id))
-        r = result.scalar_one()
-        r.status = "failed"
-        r.error_message = str(e)
-        r.finished_at = utcnow()
-        await db.commit()
+        if run_id is not None:
+            result = await db.execute(select(IngestionRun).where(IngestionRun.id == run_id))
+            r = result.scalar_one()
+            r.status = "failed"
+            r.error_message = str(e)
+            r.finished_at = utcnow()
+            await db.commit()
+        else:
+            _last_error = str(e)
+            raise
     finally:
         _current_stage = ""
         _current_stage_detail = ""
         _is_running = False
         _llm_ref = None
 
+    if run_id is None:
+        raise RuntimeError("Failed to create ingestion run")
+    _last_error = None
     return run_id
 
 

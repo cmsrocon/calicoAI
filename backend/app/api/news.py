@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,21 @@ from app.models.vertical import Vertical
 from app.schemas.news_item import NewsItemDetail, NewsItemSummary, NewsItemVendorInfo, NewsItemVerticalInfo, NewsListResponse
 
 router = APIRouter(prefix="/news", tags=["news"])
+logger = logging.getLogger(__name__)
+
+
+def _load_json_list(value: str | None, field_name: str, item_id: int) -> list[str]:
+    if not value or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        logger.warning("News item %s has invalid %s JSON; falling back to empty list", item_id, field_name)
+        return []
+    if isinstance(parsed, list):
+        return [str(entry) for entry in parsed if entry is not None]
+    logger.warning("News item %s has non-list %s JSON; falling back to empty list", item_id, field_name)
+    return []
 
 
 async def _enrich_item(item: NewsItem, db: AsyncSession) -> dict:
@@ -45,8 +61,8 @@ async def _enrich_item(item: NewsItem, db: AsyncSession) -> dict:
         language=item.language, summary=item.summary, why_it_matters=item.why_it_matters,
         importance_rank=item.importance_rank, ai_relevance_score=item.ai_relevance_score,
         vendors=vendors, verticals=verticals,
-        pros=json.loads(item.pros or "[]"),
-        cons=json.loads(item.cons or "[]"),
+        pros=_load_json_list(item.pros, "pros", item.id),
+        cons=_load_json_list(item.cons, "cons", item.id),
         balanced_take=item.balanced_take, is_processed=item.is_processed,
         processing_error=item.processing_error,
     )

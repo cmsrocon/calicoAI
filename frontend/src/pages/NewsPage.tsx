@@ -7,7 +7,7 @@ import { useUIStore } from '../store/uiStore'
 
 export default function NewsPage() {
   const { search, setFilter } = useFilterStore()
-  const { detailItem, closeDetail } = useUIStore()
+  const { detailItem } = useUIStore()
 
   return (
     <div className="flex gap-6">

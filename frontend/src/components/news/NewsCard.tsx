@@ -51,7 +51,7 @@ export default function NewsCard({ item }: Props) {
                 label={v.name}
                 color="orange"
                 onClick={(e) => {
-                  e && (e as React.MouseEvent).stopPropagation()
+                  e.stopPropagation()
                   setActiveTab('vendors')
                   openDetail('vendor', v.id)
                 }}
@@ -63,7 +63,7 @@ export default function NewsCard({ item }: Props) {
                 label={v.name}
                 color="blue"
                 onClick={(e) => {
-                  e && (e as React.MouseEvent).stopPropagation()
+                  e.stopPropagation()
                   setActiveTab('verticals')
                   openDetail('vertical', v.id)
                 }}

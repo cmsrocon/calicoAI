@@ -8,6 +8,19 @@ import LoadingSpinner from '../shared/LoadingSpinner'
 import TagChip from '../shared/TagChip'
 import BalancedTake from './BalancedTake'
 
+function formatProcessingError(error: string) {
+  const normalized = error.trim()
+  if (
+    normalized === 'Expecting value: line 1 column 1 (char 0)' ||
+    normalized.includes('LLM returned an empty response') ||
+    normalized.includes('LLM returned an empty fenced response') ||
+    normalized.includes('LLM returned invalid JSON')
+  ) {
+    return 'The configured model returned an empty or non-JSON response. Check Settings > Test connection, then run Refresh again.'
+  }
+  return normalized
+}
+
 export default function NewsDetail({ itemId }: { itemId: number }) {
   const { closeDetail, openDetail, setActiveTab } = useUIStore()
   const { data: item, isLoading } = useQuery({
@@ -106,8 +119,8 @@ export default function NewsDetail({ itemId }: { itemId: number }) {
                   )}
 
                   {item.processing_error && (
-                    <p className="ml-5 text-xs text-red-400/80 font-mono truncate" title={item.processing_error}>
-                      Error: {item.processing_error}
+                    <p className="ml-5 text-xs text-red-400/80" title={item.processing_error}>
+                      Error: {formatProcessingError(item.processing_error)}
                     </p>
                   )}
 

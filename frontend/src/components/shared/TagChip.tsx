@@ -1,7 +1,9 @@
+import type { MouseEventHandler } from 'react'
+
 interface Props {
   label: string
   color?: 'orange' | 'blue' | 'green'
-  onClick?: () => void
+  onClick?: MouseEventHandler<HTMLSpanElement>
 }
 
 export default function TagChip({ label, color = 'orange', onClick }: Props) {

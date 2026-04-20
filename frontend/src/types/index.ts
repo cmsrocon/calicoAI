@@ -120,6 +120,7 @@ export interface IngestionStatus {
   is_running: boolean
   current_stage: string | null
   current_stage_detail: string | null
+  last_error: string | null
   live_calls: number | null
   live_tokens_in: number | null
   live_tokens_out: number | null

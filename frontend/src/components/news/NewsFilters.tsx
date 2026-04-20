@@ -1,7 +1,7 @@
 import { useFilterStore } from '../../store/filterStore'
 
 export default function NewsFilters() {
-  const { dateFrom, dateTo, minImportance, sortBy, search, setFilter, resetFilters } = useFilterStore()
+  const { dateFrom, dateTo, minImportance, sortBy, setFilter, resetFilters } = useFilterStore()
 
   return (
     <div className="space-y-4">

@@ -74,6 +74,11 @@ def _build_llm(raw: dict) -> LLMService:
     )
 
 
+def _contains_reasoning_markup(text: str) -> bool:
+    lower = text.lower()
+    return "<think>" in lower or "</think>" in lower
+
+
 @router.get("")
 async def get_settings(db: AsyncSession = Depends(get_db)):
     return await load_settings(db)
@@ -147,12 +152,19 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
         reply = await test_llm.complete(
             "You are a test assistant.",
             "Reply with the single word OK and nothing else.",
-            max_tokens=10,
+            max_tokens=40,
             temperature=0,
         )
         latency = int((time.monotonic() - t0) * 1000)
         if "ok" in reply.strip().lower():
             record("Connectivity", "ok", f"Received valid response from {model}.", latency)
+        elif _contains_reasoning_markup(reply):
+            record(
+                "Connectivity",
+                "warning",
+                "Model emitted reasoning markup before the final answer. JSON tasks may still work, but non-reasoning models are more reliable.",
+                latency,
+            )
         else:
             record("Connectivity", "warning", f"Unexpected reply: {reply[:80]!r}", latency)
     except Exception as e:
@@ -167,22 +179,29 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
     # Step 2: JSON compliance — critical for the whole pipeline
     t0 = time.monotonic()
     try:
-        import json
         raw_json = await test_llm.complete(
             'Return ONLY valid JSON. No markdown, no explanation.',
             'Return this exact structure: {"status": "ok", "value": 42}',
-            max_tokens=50,
+            max_tokens=200,
             temperature=0,
         )
         latency = int((time.monotonic() - t0) * 1000)
-        parsed = json.loads(raw_json.strip())
+        parsed = test_llm._parse_json(raw_json)
         if parsed.get("status") == "ok":
             record("JSON output", "ok", "Model returns valid, parseable JSON.", latency)
         else:
             record("JSON output", "warning", f"JSON parsed but unexpected shape: {raw_json[:80]}", latency)
     except Exception as e:
         latency = int((time.monotonic() - t0) * 1000)
-        record("JSON output", "error", f"Could not parse JSON: {e}. Pipeline will fail without this.", latency)
+        msg = str(e)
+        if "empty response" in msg.lower() or "invalid json" in msg.lower():
+            detail = (
+                f"{msg}. This model is not reliably returning plain JSON. "
+                "Use a non-reasoning model or disable thinking, then run Test connection again."
+            )
+        else:
+            detail = f"Could not parse JSON: {e}. Pipeline will fail without this."
+        record("JSON output", "error", detail, latency)
         overall = "error"
 
     if overall == "error":
@@ -211,7 +230,15 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
             overall = "degraded"
     except Exception as e:
         latency = int((time.monotonic() - t0) * 1000)
-        record("Relevance scoring", "error", f"check_relevance failed: {e}", latency)
+        msg = str(e)
+        if "reasoning text instead of a final json answer" in msg.lower():
+            detail = (
+                "check_relevance failed because the model emitted reasoning text instead of JSON. "
+                "Refresh can still run, but relevance scoring will degrade until you switch to a non-reasoning model."
+            )
+        else:
+            detail = f"check_relevance failed: {e}"
+        record("Relevance scoring", "error", detail, latency)
         overall = "degraded"
 
     # Step 4: Full article analysis — the most demanding pipeline call
@@ -251,7 +278,15 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
                    f"Vendors detected: {[v['name'] for v in processed.vendor_tags]}.", latency)
     except Exception as e:
         latency = int((time.monotonic() - t0) * 1000)
-        record("Article analysis", "error", f"process_item failed: {e}", latency)
+        msg = str(e)
+        if "reasoning text instead of a final json answer" in msg.lower():
+            detail = (
+                "process_item failed because the model emitted reasoning text instead of JSON. "
+                "Use a non-reasoning model or disable thinking before running Refresh."
+            )
+        else:
+            detail = f"process_item failed: {e}"
+        record("Article analysis", "error", detail, latency)
         if overall == "ok":
             overall = "degraded"
 

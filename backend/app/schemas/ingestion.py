@@ -27,6 +27,7 @@ class IngestionStatusResponse(BaseModel):
     is_running: bool
     current_stage: str | None = None
     current_stage_detail: str | None = None
+    last_error: str | None = None
     # Live stats for the active run (None when not running)
     live_calls: int | None = None
     live_tokens_in: int | None = None

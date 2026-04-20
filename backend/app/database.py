@@ -6,7 +6,7 @@ from app.config import settings
 engine = create_async_engine(
     settings.database_url,
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
 
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -24,4 +24,5 @@ async def get_db() -> AsyncSession:
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.execute(__import__("sqlalchemy").text("PRAGMA journal_mode=WAL"))
+        await conn.execute(__import__("sqlalchemy").text("PRAGMA busy_timeout=30000"))
         await conn.execute(__import__("sqlalchemy").text("PRAGMA foreign_keys=ON"))

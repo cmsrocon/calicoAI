@@ -1,11 +1,17 @@
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
+from json import JSONDecodeError
 
 logger = logging.getLogger(__name__)
 
 _JSON_INSTRUCTION = "\n\nReturn ONLY valid JSON. No markdown, no explanation outside the JSON."
+_NO_REASONING_INSTRUCTION = (
+    "\nDo not output hidden reasoning, chain-of-thought, analysis, or <think> tags. "
+    "Skip directly to the final answer."
+)
 
 # USD per 1M tokens (input, output) — update as pricing changes
 _PRICING: dict[str, tuple[float, float]] = {
@@ -150,22 +156,70 @@ class LLMService:
         if resp.usage:
             self._session_tokens_in += resp.usage.prompt_tokens
             self._session_tokens_out += resp.usage.completion_tokens
-        return resp.choices[0].message.content or ""
+        content = resp.choices[0].message.content or ""
+        cleaned = self._strip_reasoning_blocks(content)
+        return cleaned or content
+
+    def _strip_reasoning_blocks(self, text: str) -> str:
+        stripped = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        return stripped.strip()
 
     def _parse_json(self, text: str) -> dict | list:
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
-        return json.loads(text)
+        payload = self._extract_json_payload(text)
+        try:
+            return json.loads(payload)
+        except JSONDecodeError as exc:
+            snippet = payload[:200].replace("\n", " ")
+            raise ValueError(f"LLM returned invalid JSON: {snippet!r}") from exc
+
+    def _extract_json_payload(self, text: str) -> str:
+        payload = self._strip_reasoning_blocks(text) or text.strip()
+        if not payload:
+            raise ValueError(
+                "LLM returned an empty response. Check the configured provider/model in Settings and run Test connection."
+            )
+
+        lower_payload = payload.lower()
+        if lower_payload.startswith("<think>") and "{" not in payload and "[" not in payload:
+            raise ValueError(
+                "LLM returned reasoning text instead of a final JSON answer. "
+                "Use a non-reasoning model or disable thinking in the selected model."
+            )
+
+        if payload.startswith("```"):
+            lines = payload.splitlines()
+            if lines:
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            payload = "\n".join(lines).strip()
+            if not payload:
+                raise ValueError(
+                    "LLM returned an empty fenced response. Check the configured provider/model in Settings and run Test connection."
+                )
+
+        for start_char, end_char in (("{", "}"), ("[", "]")):
+            start = payload.find(start_char)
+            end = payload.rfind(end_char)
+            if start == -1 or end == -1 or end <= start:
+                continue
+            candidate = payload[start:end + 1].strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except JSONDecodeError:
+                continue
+
+        return payload
 
     async def check_relevance(self, title: str, body_snippet: str) -> dict:
         system = (
             "You are a classifier for AI industry news. Evaluate whether the given article "
             "is meaningfully related to artificial intelligence, machine learning, LLMs, AI companies, "
-            "AI policy, or AI applications in industry." + _JSON_INSTRUCTION
+            "AI policy, or AI applications in industry." + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"Title: {title}\n\nSnippet: {body_snippet[:500]}\n\nReturn: {{\"is_ai_relevant\": bool, \"ai_relevance_score\": 0.0-1.0, \"reason\": \"string\"}}"
-        raw = await self.complete(system, user, max_tokens=200, temperature=0.1)
+        raw = await self.complete(system, user, max_tokens=350, temperature=0.1)
         return self._parse_json(raw)
 
     async def process_item(self, title: str, url: str, source_name: str, body: str,
@@ -175,7 +229,7 @@ class LLMService:
         system = (
             "You are an expert AI industry analyst. Process the provided article and return a structured analysis. "
             "Be precise, factual, and balanced. For vendor tags, prefer names from the known vendors list. "
-            f"For verticals, choose ONLY from this list: {verticals_list}." + _JSON_INSTRUCTION
+            f"For verticals, choose ONLY from this list: {verticals_list}." + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Title: {title}
 URL: {url}
@@ -219,7 +273,7 @@ Return JSON:
     async def describe_vendor(self, name: str, context: str = "") -> dict:
         system = (
             "You are a researcher building a database of AI industry players. "
-            "Provide accurate, factual descriptions." + _JSON_INSTRUCTION
+            "Provide accurate, factual descriptions." + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Vendor name: {name}
 Context from article: {context[:500]}
@@ -239,7 +293,8 @@ Return JSON:
             return []
         items_json = json.dumps([{"title_a": a, "url_a": ua, "title_b": b, "url_b": ub} for a, ua, b, ub in pairs])
         system = (
-            "You are a news deduplication system. Identify which pairs cover the same underlying story." + _JSON_INSTRUCTION
+            "You are a news deduplication system. Identify which pairs cover the same underlying story."
+            + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Candidate pairs:
 {items_json}
@@ -256,7 +311,8 @@ If no pairs are duplicates, return an empty array: []"""
         items_json = json.dumps(items[:30], indent=2)
         system = (
             "You are an AI industry trends analyst. Analyze the batch of news items and identify "
-            "key developments, trajectories, and emerging patterns. Be balanced and grounded in the data." + _JSON_INSTRUCTION
+            "key developments, trajectories, and emerging patterns. Be balanced and grounded in the data."
+            + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Entity: {entity_name}
 
@@ -276,7 +332,8 @@ Return JSON:
         items_json = json.dumps(items[:40], indent=2)
         system = (
             "You are an AI industry analyst writing a weekly overview. Synthesize developments "
-            "across vendors and sectors into a clear, balanced narrative." + _JSON_INSTRUCTION
+            "across vendors and sectors into a clear, balanced narrative."
+            + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Top AI news items this period:
 {items_json}
