@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { ExternalLink, X } from 'lucide-react'
+import { ExternalLink, Loader2, X } from 'lucide-react'
 import { fetchNewsItem } from '../../api/news'
+import { fetchIngestionStatus } from '../../api/ingestion'
 import { useUIStore } from '../../store/uiStore'
 import ImportanceBadge from '../shared/ImportanceBadge'
 import LoadingSpinner from '../shared/LoadingSpinner'
@@ -12,7 +13,27 @@ export default function NewsDetail({ itemId }: { itemId: number }) {
   const { data: item, isLoading } = useQuery({
     queryKey: ['news', itemId],
     queryFn: () => fetchNewsItem(itemId),
+    refetchInterval: (query) => {
+      const data = query.state.data as { is_processed?: boolean } | undefined
+      return data && !data.is_processed ? 5000 : false
+    },
   })
+
+  // Poll ingestion status only while item is incomplete
+  const { data: ingestionStatus } = useQuery({
+    queryKey: ['ingestion-status-detail'],
+    queryFn: fetchIngestionStatus,
+    refetchInterval: item && !item.is_processed ? 3000 : false,
+    enabled: !!(item && !item.is_processed),
+  })
+
+  const missingFields = item && !item.is_processed ? [
+    !item.summary && 'Summary',
+    !item.why_it_matters && 'Why it matters',
+    item.vendors.length === 0 && 'Vendor tags',
+    item.verticals.length === 0 && 'Industry sectors',
+    !item.balanced_take && 'Balanced analysis',
+  ].filter(Boolean) as string[] : []
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -44,6 +65,57 @@ export default function NewsDetail({ itemId }: { itemId: number }) {
                   <ExternalLink className="w-4 h-4" />
                 </a>
               </div>
+
+              {/* Processing status banner */}
+              {!item.is_processed && (
+                <div className="bg-yellow-950/30 border border-yellow-800/50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    {ingestionStatus?.is_running ? (
+                      <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin shrink-0" />
+                    ) : (
+                      <span className="text-yellow-400">⏳</span>
+                    )}
+                    <p className="text-xs font-semibold text-yellow-400">
+                      {ingestionStatus?.is_running ? 'Analysis in progress' : 'Analysis incomplete'}
+                    </p>
+                  </div>
+
+                  {ingestionStatus?.is_running && ingestionStatus.current_stage && (
+                    <div className="ml-5 space-y-0.5">
+                      <p className="text-xs text-orange-300">{ingestionStatus.current_stage}</p>
+                      {ingestionStatus.current_stage_detail && (
+                        <p className="text-xs text-stone-500">{ingestionStatus.current_stage_detail}</p>
+                      )}
+                      {(ingestionStatus.live_calls ?? 0) > 0 && (
+                        <p className="text-xs text-stone-600 font-mono">
+                          {ingestionStatus.live_calls} LLM calls
+                          {ingestionStatus.live_cost_usd != null && ingestionStatus.live_cost_usd > 0
+                            ? ` · $${ingestionStatus.live_cost_usd.toFixed(4)} est.`
+                            : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {missingFields.length > 0 && (
+                    <ul className="ml-5 space-y-0.5">
+                      {missingFields.map((f) => (
+                        <li key={f} className="text-xs text-yellow-200/60">· {f} not yet generated</li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {item.processing_error && (
+                    <p className="ml-5 text-xs text-red-400/80 font-mono truncate" title={item.processing_error}>
+                      Error: {item.processing_error}
+                    </p>
+                  )}
+
+                  {!ingestionStatus?.is_running && (
+                    <p className="ml-5 text-xs text-stone-500">Will be completed on the next ingestion run.</p>
+                  )}
+                </div>
+              )}
 
               {item.why_it_matters && (
                 <div className="bg-orange-950/30 border border-orange-900/50 rounded-lg p-3">

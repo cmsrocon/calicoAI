@@ -2,6 +2,7 @@ import { useUIStore } from '../../store/uiStore'
 import NewsPage from '../../pages/NewsPage'
 import VendorsPage from '../../pages/VendorsPage'
 import VerticalsPage from '../../pages/VerticalsPage'
+import TrendsPage from '../../pages/TrendsPage'
 import SettingsPage from '../../pages/SettingsPage'
 import TabBar from './TabBar'
 import StatusBar from './StatusBar'
@@ -31,6 +32,7 @@ export default function Shell() {
         {activeTab === 'news' && <NewsPage />}
         {activeTab === 'vendors' && <VendorsPage />}
         {activeTab === 'verticals' && <VerticalsPage />}
+        {activeTab === 'trends' && <TrendsPage />}
         {activeTab === 'settings' && <SettingsPage />}
       </main>
     </div>

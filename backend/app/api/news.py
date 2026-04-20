@@ -48,6 +48,7 @@ async def _enrich_item(item: NewsItem, db: AsyncSession) -> dict:
         pros=json.loads(item.pros or "[]"),
         cons=json.loads(item.cons or "[]"),
         balanced_take=item.balanced_take, is_processed=item.is_processed,
+        processing_error=item.processing_error,
     )
 
 

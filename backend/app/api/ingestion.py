@@ -19,10 +19,18 @@ async def get_status(db: AsyncSession = Depends(get_db)):
         select(IngestionRun).order_by(IngestionRun.started_at.desc())
     )).scalar_one_or_none()
     last_run = IngestionRunResponse.model_validate(last_run_row) if last_run_row else None
+    running = ingestion_service.is_running()
+    progress = ingestion_service.get_progress() if running else {}
     return IngestionStatusResponse(
         last_run=last_run,
         next_run_at=None,
-        is_running=ingestion_service.is_running(),
+        is_running=running,
+        current_stage=progress.get("stage") or None,
+        current_stage_detail=progress.get("detail") or None,
+        live_calls=progress.get("calls") if running else None,
+        live_tokens_in=progress.get("tokens_in") if running else None,
+        live_tokens_out=progress.get("tokens_out") if running else None,
+        live_cost_usd=progress.get("estimated_cost_usd") if running else None,
     )
 
 

@@ -42,6 +42,7 @@ class NewsItemDetail(NewsItemSummary):
     cons: list[str] = []
     balanced_take: str | None = None
     is_processed: bool
+    processing_error: str | None = None
     trust_weight: float | None = None
 
 

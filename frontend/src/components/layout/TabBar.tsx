@@ -1,10 +1,11 @@
-import { BarChart2, Building2, Layers, Settings } from 'lucide-react'
+import { BarChart2, Building2, Layers, Settings, TrendingUp } from 'lucide-react'
 import { useUIStore } from '../../store/uiStore'
 
 const tabs = [
   { id: 'news' as const, label: 'Daily News', icon: BarChart2 },
   { id: 'vendors' as const, label: 'Vendors', icon: Building2 },
-  { id: 'verticals' as const, label: 'Verticals', icon: Layers },
+  { id: 'verticals' as const, label: 'Sectors', icon: Layers },
+  { id: 'trends' as const, label: 'Trends', icon: TrendingUp },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 

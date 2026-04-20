@@ -48,6 +48,7 @@ export interface NewsItemDetail extends NewsItemSummary {
   cons: string[]
   balanced_take: string | null
   is_processed: boolean
+  processing_error: string | null
 }
 
 export interface NewsListResponse {
@@ -107,10 +108,20 @@ export interface IngestionRun {
   items_duplicate: number
   triggered_by: string
   error_message: string | null
+  llm_calls: number
+  tokens_in: number
+  tokens_out: number
+  estimated_cost_usd: number | null
 }
 
 export interface IngestionStatus {
   last_run: IngestionRun | null
   next_run_at: string | null
   is_running: boolean
+  current_stage: string | null
+  current_stage_detail: string | null
+  live_calls: number | null
+  live_tokens_in: number | null
+  live_tokens_out: number | null
+  live_cost_usd: number | null
 }

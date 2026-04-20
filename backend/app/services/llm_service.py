@@ -7,6 +7,18 @@ logger = logging.getLogger(__name__)
 
 _JSON_INSTRUCTION = "\n\nReturn ONLY valid JSON. No markdown, no explanation outside the JSON."
 
+# USD per 1M tokens (input, output) — update as pricing changes
+_PRICING: dict[str, tuple[float, float]] = {
+    "claude-opus-4-7": (15.0, 75.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (0.80, 4.0),
+    "claude-haiku-4-5-20251001": (0.80, 4.0),
+    "gpt-4o": (2.50, 10.0),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4": (30.0, 60.0),
+    "gpt-3.5-turbo": (0.50, 1.50),
+}
+
 
 @dataclass
 class ProcessedItem:
@@ -39,6 +51,26 @@ class LLMService:
         self._openai_client = None
         self._minimax_client = None
         self._ollama_client = None
+        # Session-level usage tracking (reset per ingestion run)
+        self._session_calls: int = 0
+        self._session_tokens_in: int = 0
+        self._session_tokens_out: int = 0
+
+    def reset_session(self) -> None:
+        self._session_calls = 0
+        self._session_tokens_in = 0
+        self._session_tokens_out = 0
+
+    def get_session_stats(self) -> dict:
+        pricing = _PRICING.get(self.model, (3.0, 15.0))
+        cost = (self._session_tokens_in / 1_000_000 * pricing[0] +
+                self._session_tokens_out / 1_000_000 * pricing[1])
+        return {
+            "calls": self._session_calls,
+            "tokens_in": self._session_tokens_in,
+            "tokens_out": self._session_tokens_out,
+            "estimated_cost_usd": round(cost, 6),
+        }
 
     def _get_anthropic(self):
         if self._anthropic_client is None:
@@ -99,6 +131,9 @@ class LLMService:
             system=system,
             messages=[{"role": "user", "content": user}],
         )
+        self._session_calls += 1
+        self._session_tokens_in += msg.usage.input_tokens
+        self._session_tokens_out += msg.usage.output_tokens
         return msg.content[0].text
 
     async def _complete_openai_compat(self, client, system: str, user: str, max_tokens: int, temperature: float) -> str:
@@ -111,6 +146,10 @@ class LLMService:
                 {"role": "user", "content": user},
             ],
         )
+        self._session_calls += 1
+        if resp.usage:
+            self._session_tokens_in += resp.usage.prompt_tokens
+            self._session_tokens_out += resp.usage.completion_tokens
         return resp.choices[0].message.content or ""
 
     def _parse_json(self, text: str) -> dict | list:
