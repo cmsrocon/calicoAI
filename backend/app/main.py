@@ -8,12 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.api.router import api_router
-from app.config import settings
 from app.database import async_session_factory, init_db
 from app.models import Source
-from app.models.app_setting import AppSetting
 from app.scheduler import start_scheduler
-from app.services.llm_service import LLMService, set_llm_service
+from app.services.llm_service import set_llm_service
 from app.services.vertical_service import seed_verticals
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -37,25 +35,16 @@ async def lifespan(app: FastAPI):
         # Seed verticals
         await seed_verticals(db)
 
-        # Load LLM settings
-        rows = (await db.execute(select(AppSetting))).scalars().all()
-        settings_map = {r.key: r.value for r in rows}
-        provider = settings_map.get("llm_provider", settings.default_llm_provider)
-        model = settings_map.get("llm_model", settings.default_llm_model)
-        llm = LLMService(
-            provider=provider,
-            model=model,
-            anthropic_api_key=settings.anthropic_api_key,
-            openai_api_key=settings.openai_api_key,
-            minimax_api_key=settings.minimax_api_key,
-            ollama_base_url=settings.ollama_base_url,
-        )
+        # Load LLM settings (keys from DB take priority over .env)
+        from app.api.settings import load_raw_settings, _build_llm
+        raw = await load_raw_settings(db)
+        llm = _build_llm(raw)
         set_llm_service(llm)
-        logger.info(f"LLM initialized: provider={provider} model={model}")
+        logger.info(f"LLM initialized: provider={raw['llm_provider']} model={raw['llm_model']}")
 
         # Start scheduler
-        hour = int(settings_map.get("schedule_hour", "6"))
-        minute = int(settings_map.get("schedule_minute", "0"))
+        hour = int(raw.get("schedule_hour", "6"))
+        minute = int(raw.get("schedule_minute", "0"))
         start_scheduler(hour=hour, minute=minute)
 
     yield
