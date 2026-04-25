@@ -4,7 +4,7 @@ interface Props {
   icon?: string
 }
 
-export default function EmptyState({ title, description, icon = '🐱' }: Props) {
+export default function EmptyState({ title, description, icon = '*' }: Props) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
       <span className="text-5xl">{icon}</span>

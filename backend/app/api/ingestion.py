@@ -3,17 +3,47 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.settings import load_raw_settings
 from app.database import async_session_factory, get_db
 from app.models.ingestion_run import IngestionRun
+from app.models.topic import Topic
 from app.schemas.ingestion import IngestionRunResponse, IngestionStatusResponse, TriggerResponse
 from app.services import ingestion_service
 from app.services.llm_service import get_llm_service
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 logger = logging.getLogger(__name__)
+
+
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _serialize_last_run(row: IngestionRun | None) -> IngestionRunResponse | None:
+    if row is None:
+        return None
+    try:
+        return IngestionRunResponse.model_validate(row)
+    except Exception:
+        logger.exception("Failed to serialize ingestion run %s for status response", getattr(row, "id", "unknown"))
+        return None
 
 
 def _validate_llm_settings(raw: dict[str, str]) -> None:
@@ -47,12 +77,18 @@ async def _validate_trigger_request() -> None:
 
 @router.get("/status", response_model=IngestionStatusResponse)
 async def get_status(db: AsyncSession = Depends(get_db)):
-    last_run_row = (await db.execute(
-        select(IngestionRun).order_by(IngestionRun.started_at.desc())
-    )).scalar_one_or_none()
-    last_run = IngestionRunResponse.model_validate(last_run_row) if last_run_row else None
     running = ingestion_service.is_running()
     progress = ingestion_service.get_progress() if running else {}
+
+    last_run = None
+    try:
+        last_run_row = (await db.execute(
+            select(IngestionRun).order_by(IngestionRun.started_at.desc())
+        )).scalar_one_or_none()
+        last_run = _serialize_last_run(last_run_row)
+    except SQLAlchemyError:
+        logger.exception("Failed to query ingestion status while a refresh was active")
+
     return IngestionStatusResponse(
         last_run=last_run,
         next_run_at=None,
@@ -60,29 +96,45 @@ async def get_status(db: AsyncSession = Depends(get_db)):
         current_stage=progress.get("stage") or None,
         current_stage_detail=progress.get("detail") or None,
         last_error=progress.get("last_error") or None,
-        live_calls=progress.get("calls") if running else None,
-        live_tokens_in=progress.get("tokens_in") if running else None,
-        live_tokens_out=progress.get("tokens_out") if running else None,
-        live_cost_usd=progress.get("estimated_cost_usd") if running else None,
+        live_calls=_coerce_int(progress.get("calls")) if running else None,
+        live_tokens_in=_coerce_int(progress.get("tokens_in")) if running else None,
+        live_tokens_out=_coerce_int(progress.get("tokens_out")) if running else None,
+        live_cost_usd=_coerce_float(progress.get("estimated_cost_usd")) if running else None,
     )
 
 
 @router.post("/trigger", response_model=TriggerResponse)
-async def trigger_ingestion(background_tasks: BackgroundTasks):
+async def trigger_ingestion(
+    background_tasks: BackgroundTasks,
+    topic_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     if ingestion_service.is_running():
         raise HTTPException(status_code=409, detail="Ingestion is already running")
     await _validate_trigger_request()
     llm = get_llm_service()
+    topic_name: str | None = None
+
+    if topic_id is not None:
+        topic = (await db.execute(select(Topic).where(Topic.id == topic_id))).scalar_one_or_none()
+        if topic is None:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        topic_name = topic.name
 
     async def run_bg():
         async with async_session_factory() as db:
             try:
-                await ingestion_service.run_ingestion(db, llm, triggered_by="manual")
+                await ingestion_service.run_ingestion(db, llm, triggered_by="manual", topic_id=topic_id)
             except Exception:
                 logger.exception("Manual ingestion task failed before progress state could be persisted")
 
     background_tasks.add_task(run_bg)
-    return TriggerResponse(run_id=0, message="Ingestion started in background")
+    message = (
+        f"Ingestion started in background for topic '{topic_name}'"
+        if topic_name
+        else "Ingestion started in background for all topics"
+    )
+    return TriggerResponse(run_id=0, message=message)
 
 
 @router.get("/runs", response_model=dict)

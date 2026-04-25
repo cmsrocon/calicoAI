@@ -1,19 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { fetchVendor, fetchVendorNews } from '../../api/vendors'
+import { useFilterStore } from '../../store/filterStore'
 import { useUIStore } from '../../store/uiStore'
 import LoadingSpinner from '../shared/LoadingSpinner'
 import TrendSummary from '../trends/TrendSummary'
 
 export default function VendorDetail({ vendorId }: { vendorId: number }) {
   const { closeDetail } = useUIStore()
+  const { selectedTopicId } = useFilterStore()
   const { data: vendor, isLoading } = useQuery({
-    queryKey: ['vendors', vendorId],
-    queryFn: () => fetchVendor(vendorId),
+    queryKey: ['vendors', vendorId, selectedTopicId],
+    queryFn: () => fetchVendor(vendorId, selectedTopicId || undefined),
   })
   const { data: newsData } = useQuery({
-    queryKey: ['vendors', vendorId, 'news'],
-    queryFn: () => fetchVendorNews(vendorId),
+    queryKey: ['vendors', vendorId, 'news', selectedTopicId],
+    queryFn: () => fetchVendorNews(vendorId, 1, selectedTopicId || undefined),
     enabled: !!vendor,
   })
 
@@ -22,7 +24,7 @@ export default function VendorDetail({ vendorId }: { vendorId: number }) {
       <div className="absolute inset-0 bg-black/60" onClick={closeDetail} />
       <aside className="relative w-full max-w-2xl bg-stone-950 border-l border-stone-800 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-stone-800">
-          <span className="text-sm font-semibold text-stone-300">Vendor</span>
+          <span className="text-sm font-semibold text-stone-300">Entity</span>
           <button onClick={closeDetail} className="p-1.5 rounded-lg text-stone-500 hover:text-stone-200 hover:bg-stone-800 transition-colors">
             <X className="w-4 h-4" />
           </button>
@@ -48,7 +50,7 @@ export default function VendorDetail({ vendorId }: { vendorId: number }) {
                   <div className="space-y-2">
                     {newsData.items.map((item: { id: number; headline: string; importance_rank: number | null }) => (
                       <div key={item.id} className="text-xs text-stone-300 flex gap-2">
-                        <span className="text-stone-600 shrink-0">{item.importance_rank ?? '—'}</span>
+                        <span className="text-stone-600 shrink-0">{item.importance_rank ?? '-'}</span>
                         <span className="line-clamp-2">{item.headline}</span>
                       </div>
                     ))}

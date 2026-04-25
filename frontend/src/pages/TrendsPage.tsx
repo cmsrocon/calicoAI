@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchOverallTrend, fetchVendorTrends, fetchVerticalTrends } from '../api/trends'
-import TrendSummary from '../components/trends/TrendSummary'
 import EmptyState from '../components/shared/EmptyState'
 import LoadingSpinner from '../components/shared/LoadingSpinner'
+import TopicSelect from '../components/shared/TopicSelect'
+import TrendSummary from '../components/trends/TrendSummary'
+import { useFilterStore } from '../store/filterStore'
 import type { Trend } from '../types'
 
 interface VendorTrendEntry {
@@ -16,19 +18,20 @@ interface VerticalTrendEntry {
 }
 
 export default function TrendsPage() {
+  const { selectedTopicId, setFilter } = useFilterStore()
   const { data: overall, isLoading } = useQuery<Trend | null>({
-    queryKey: ['trends', 'overall'],
-    queryFn: fetchOverallTrend,
+    queryKey: ['trends', 'overall', selectedTopicId],
+    queryFn: () => fetchOverallTrend(selectedTopicId || undefined),
   })
 
   const { data: vendorData } = useQuery<{ trends: VendorTrendEntry[] }>({
-    queryKey: ['trends', 'vendors'],
-    queryFn: () => fetchVendorTrends(10),
+    queryKey: ['trends', 'vendors', selectedTopicId],
+    queryFn: () => fetchVendorTrends(10, selectedTopicId || undefined),
   })
 
   const { data: verticalData } = useQuery<{ trends: VerticalTrendEntry[] }>({
-    queryKey: ['trends', 'verticals'],
-    queryFn: () => fetchVerticalTrends(10),
+    queryKey: ['trends', 'verticals', selectedTopicId],
+    queryFn: () => fetchVerticalTrends(10, selectedTopicId || undefined),
   })
 
   const hasVendorTrends = (vendorData?.trends.length ?? 0) > 0
@@ -36,15 +39,19 @@ export default function TrendsPage() {
 
   return (
     <div className="space-y-10 max-w-3xl">
-      {/* Overall */}
+      <div className="w-full sm:w-56">
+        <TopicSelect value={selectedTopicId} onChange={(value) => setFilter('selectedTopicId', value)} />
+      </div>
+
       <section>
-        <h2 className="text-lg font-semibold text-stone-200 mb-4">AI Industry Overview</h2>
+        <h2 className="text-lg font-semibold text-stone-200 mb-4">
+          {selectedTopicId ? 'Topic Overview' : 'All-Topic Overview'}
+        </h2>
         {isLoading && <div className="flex justify-center py-12"><LoadingSpinner size="lg" /></div>}
         {!isLoading && !overall && (
           <EmptyState
             title="No trend data yet"
             description="Trends are generated after ingestion processes at least a few articles. Run a refresh to start."
-            icon="📈"
           />
         )}
         {overall && (
@@ -54,14 +61,13 @@ export default function TrendsPage() {
         )}
       </section>
 
-      {/* By vendor */}
       {hasVendorTrends && (
         <section>
-          <h2 className="text-lg font-semibold text-stone-200 mb-4">By Vendor</h2>
+          <h2 className="text-lg font-semibold text-stone-200 mb-4">By Entity</h2>
           <div className="space-y-4">
             {vendorData!.trends.map(({ trend, vendor }) => (
               <div key={trend.id} className="bg-stone-900 border border-stone-800 rounded-xl p-4">
-                <p className="text-sm font-semibold text-orange-400 mb-3">{vendor?.name ?? 'Unknown vendor'}</p>
+                <p className="text-sm font-semibold text-orange-400 mb-3">{vendor?.name ?? 'Unknown entity'}</p>
                 <TrendSummary trend={trend} />
               </div>
             ))}
@@ -69,14 +75,13 @@ export default function TrendsPage() {
         </section>
       )}
 
-      {/* By vertical */}
       {hasVerticalTrends && (
         <section>
-          <h2 className="text-lg font-semibold text-stone-200 mb-4">By Sector</h2>
+          <h2 className="text-lg font-semibold text-stone-200 mb-4">By Theme</h2>
           <div className="space-y-4">
             {verticalData!.trends.map(({ trend, vertical }) => (
               <div key={trend.id} className="bg-stone-900 border border-stone-800 rounded-xl p-4">
-                <p className="text-sm font-semibold text-blue-400 mb-3">{vertical?.name ?? 'Unknown sector'}</p>
+                <p className="text-sm font-semibold text-sky-400 mb-3">{vertical?.name ?? 'Unknown theme'}</p>
                 <TrendSummary trend={trend} />
               </div>
             ))}

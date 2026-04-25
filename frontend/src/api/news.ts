@@ -9,6 +9,7 @@ export interface NewsFilters {
   vendor_id?: number
   vertical_id?: number
   source_id?: number
+  topic_id?: number
   language?: string
   min_importance?: number
   search?: string

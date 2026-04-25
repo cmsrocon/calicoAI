@@ -1,5 +1,7 @@
 export interface Source {
   id: number
+  topic_id: number
+  topic_name: string | null
   url: string
   name: string
   feed_type: string
@@ -26,8 +28,19 @@ export interface VerticalTag {
   confidence: number
 }
 
+export interface StorySourceDocument {
+  url: string
+  source_name: string | null
+  headline: string
+  published_at: string | null
+  is_primary: boolean
+}
+
 export interface NewsItemSummary {
   id: number
+  topic_id: number
+  topic_name: string
+  topic_slug: string
   headline: string
   external_url: string
   source_id: number | null
@@ -39,6 +52,7 @@ export interface NewsItemSummary {
   why_it_matters: string | null
   importance_rank: number | null
   ai_relevance_score: number | null
+  source_documents: StorySourceDocument[]
   vendors: VendorTag[]
   verticals: VerticalTag[]
 }
@@ -87,6 +101,8 @@ export interface Vertical {
 
 export interface Trend {
   id: number
+  topic_id: number | null
+  topic_name: string | null
   trend_type: string
   entity_id: number | null
   period_start: string
@@ -96,6 +112,33 @@ export interface Trend {
   top_themes: string[]
   item_count: number
   generated_at: string
+}
+
+export interface EntityGraphNode {
+  id: string
+  entity_id: number
+  entity_type: 'vendor' | 'vertical'
+  name: string
+  article_count: number
+  importance_score: number
+}
+
+export interface EntityGraphLink {
+  source: string
+  target: string
+  article_count: number
+  strength_score: number
+  description: string
+  sample_headlines: string[]
+}
+
+export interface EntityGraphNetwork {
+  topic_id: number | null
+  scope_label: string
+  node_count: number
+  link_count: number
+  nodes: EntityGraphNode[]
+  links: EntityGraphLink[]
 }
 
 export interface IngestionRun {
@@ -125,4 +168,23 @@ export interface IngestionStatus {
   live_tokens_in: number | null
   live_tokens_out: number | null
   live_cost_usd: number | null
+}
+
+export interface Topic {
+  id: number
+  name: string
+  slug: string
+  description: string | null
+  is_default: boolean
+  source_count: number
+  article_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface TopicCreateResponse {
+  topic: Topic
+  seeded_sources_count: number
+  seed_status: 'ok' | 'warning'
+  seed_message: string | null
 }

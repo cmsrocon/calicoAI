@@ -1,3 +1,4 @@
+from app.models.topic import Topic
 from app.models.source import Source
 from app.models.ingestion_run import IngestionRun
 from app.models.vendor import Vendor
@@ -8,6 +9,7 @@ from app.models.app_setting import AppSetting
 
 __all__ = [
     "Source",
+    "Topic",
     "IngestionRun",
     "Vendor",
     "Vertical",

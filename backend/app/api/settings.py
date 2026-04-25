@@ -208,36 +208,38 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
         stats = test_llm.get_session_stats()
         return _result(overall, provider, model, key_configured, steps, stats)
 
-    # Step 3: Relevance scoring on a known AI article
+    # Step 3: Relevance scoring on a known topical article
     t0 = time.monotonic()
     try:
-        res = await test_llm.check_relevance(
+        res = await test_llm.check_topic_relevance(
             "OpenAI releases GPT-5 with improved reasoning capabilities",
             "OpenAI has announced GPT-5, its latest large language model featuring "
             "significant improvements in multi-step reasoning, code generation, and "
             "reduced hallucination rates compared to GPT-4.",
+            "Artificial intelligence",
+            "Artificial intelligence, machine learning, AI companies, and AI policy.",
         )
         latency = int((time.monotonic() - t0) * 1000)
-        score = float(res.get("ai_relevance_score", 0))
+        score = float(res.get("topic_relevance_score", res.get("ai_relevance_score", 0)))
         if score >= 0.8:
-            record("Relevance scoring", "ok", f"AI article scored {score:.2f} (expected ≥0.80).", latency)
+            record("Relevance scoring", "ok", f"Topic article scored {score:.2f} (expected >= 0.80).", latency)
         elif score >= 0.4:
             record("Relevance scoring", "warning",
-                   f"Score {score:.2f} is low for an obviously AI article — may filter too aggressively.", latency)
+                   f"Score {score:.2f} is low for an obviously relevant article and may filter too aggressively.", latency)
         else:
             record("Relevance scoring", "error",
-                   f"Score {score:.2f} is far too low — relevance filter will drop valid articles.", latency)
+                   f"Score {score:.2f} is far too low and will drop valid articles.", latency)
             overall = "degraded"
     except Exception as e:
         latency = int((time.monotonic() - t0) * 1000)
         msg = str(e)
         if "reasoning text instead of a final json answer" in msg.lower():
             detail = (
-                "check_relevance failed because the model emitted reasoning text instead of JSON. "
-                "Refresh can still run, but relevance scoring will degrade until you switch to a non-reasoning model."
+                "check_topic_relevance failed because the model emitted reasoning text instead of JSON. "
+                "Refresh can still run, but topic relevance scoring will degrade until you switch to a non-reasoning model."
             )
         else:
-            detail = f"check_relevance failed: {e}"
+            detail = f"check_topic_relevance failed: {e}"
         record("Relevance scoring", "error", detail, latency)
         overall = "degraded"
 
@@ -256,8 +258,10 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
                 "available immediately via the Anthropic API and will be integrated into "
                 "Amazon Bedrock and Google Cloud Vertex AI next month."
             ),
+            topic_name="Artificial intelligence",
+            topic_description="Artificial intelligence, machine learning, AI companies, and AI policy.",
             known_vendors=["OpenAI", "Google", "Meta"],
-            known_verticals=["Healthcare", "Finance", "Legal", "Education"],
+            known_verticals=["Research", "Model releases", "Enterprise AI"],
         )
         latency = int((time.monotonic() - t0) * 1000)
         issues = []

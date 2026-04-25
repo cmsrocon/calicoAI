@@ -212,47 +212,78 @@ class LLMService:
 
         return payload
 
-    async def check_relevance(self, title: str, body_snippet: str) -> dict:
+    async def check_topic_relevance(self, title: str, body_snippet: str, topic_name: str, topic_description: str = "") -> dict:
         system = (
-            "You are a classifier for AI industry news. Evaluate whether the given article "
-            "is meaningfully related to artificial intelligence, machine learning, LLMs, AI companies, "
-            "AI policy, or AI applications in industry." + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
+            f"You are a classifier for the news topic '{topic_name}'. Evaluate whether the given article "
+            f"is meaningfully relevant to this topic. Topic scope: {topic_description or topic_name}."
+            + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
-        user = f"Title: {title}\n\nSnippet: {body_snippet[:500]}\n\nReturn: {{\"is_ai_relevant\": bool, \"ai_relevance_score\": 0.0-1.0, \"reason\": \"string\"}}"
+        user = (
+            f"Title: {title}\n\nSnippet: {body_snippet[:500]}"
+            "\n\nReturn: {\"is_topic_relevant\": bool, \"topic_relevance_score\": 0.0-1.0, \"reason\": \"string\"}"
+        )
         raw = await self.complete(system, user, max_tokens=350, temperature=0.1)
         return self._parse_json(raw)
 
-    async def process_item(self, title: str, url: str, source_name: str, body: str,
-                           known_vendors: list[str], known_verticals: list[str]) -> ProcessedItem:
+    async def process_item(
+        self,
+        title: str,
+        url: str,
+        source_name: str,
+        body: str,
+        topic_name: str,
+        topic_description: str,
+        known_vendors: list[str],
+        known_verticals: list[str],
+        source_documents: list[dict] | None = None,
+    ) -> ProcessedItem:
         vendors_hint = ", ".join(known_vendors[:100]) if known_vendors else "none yet"
-        verticals_list = ", ".join(known_verticals)
+        verticals_hint = ", ".join(known_verticals[:100]) if known_verticals else "none yet"
+        source_documents = source_documents or []
+        source_bundle = json.dumps(source_documents[:8], indent=2) if source_documents else "[]"
+        multi_source_guidance = (
+            "You are distilling multiple source documents covering the same underlying story into a single canonical article. "
+            "Capture the shared facts once, then make any differences in framing, interpretation, or opinion explicit in the balanced_take "
+            "and in the pros/cons bullets. Preserve a balanced view and do not collapse disagreements into false consensus. "
+            if len(source_documents) > 1 else
+            ""
+        )
         system = (
-            "You are an expert AI industry analyst. Process the provided article and return a structured analysis. "
-            "Be precise, factual, and balanced. For vendor tags, prefer names from the known vendors list. "
-            f"For verticals, choose ONLY from this list: {verticals_list}." + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
+            f"You are an analyst for the topic '{topic_name}'. Process the provided article and return a structured analysis. "
+            f"Topic scope: {topic_description or topic_name}. "
+            + multi_source_guidance +
+            "Be precise, factual, and balanced. For vendor tags, treat them as key entities such as organisations, people, teams, "
+            "parties, or products central to the story. Prefer names from the known entities list when applicable. "
+            "For vertical tags, treat them as concise recurring themes or subtopics. Reuse known theme names when they fit, "
+            "but create a better one if needed."
+            + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Title: {title}
 URL: {url}
 Source: {source_name}
+Topic: {topic_name}
+Source documents:
+{source_bundle}
 
 Article text:
 {body}
 
-Known vendors (use these names when applicable): {vendors_hint}
+Known entities (use these names when applicable): {vendors_hint}
+Known themes (reuse when appropriate): {verticals_hint}
 
 Return JSON:
 {{
   "headline": "concise cleaned headline (max 120 chars)",
   "language": "2-letter ISO code",
-  "summary": "3-4 sentence factual summary",
+  "summary": "3-4 sentence factual summary of the distilled story",
   "why_it_matters": "2-3 sentences on strategic significance",
   "importance_rank": 1-10,
-  "pros": ["advantage 1", "advantage 2"],
-  "cons": ["risk or concern 1"],
-  "balanced_take": "nuanced synthesis paragraph",
-  "vendor_tags": [{{"name": "Vendor Name", "confidence": 0.0-1.0}}],
-  "vertical_tags": [{{"name": "Vertical Name", "confidence": 0.0-1.0}}],
-  "new_vendors": ["any vendor names not in the known list that are important AI players"]
+  "pros": ["benefit, favorable claim, or positive interpretation from the coverage"],
+  "cons": ["risk, criticism, or skeptical interpretation from the coverage"],
+  "balanced_take": "nuanced synthesis paragraph that explicitly notes any disagreement or difference in perspective across sources",
+  "vendor_tags": [{{"name": "Entity Name", "confidence": 0.0-1.0}}],
+  "vertical_tags": [{{"name": "Theme Name", "confidence": 0.0-1.0}}],
+  "new_vendors": ["important entity names not already in the known list"]
 }}"""
         raw = await self.complete(system, user, max_tokens=1500, temperature=0.2)
         data = self._parse_json(raw)
@@ -272,7 +303,8 @@ Return JSON:
 
     async def describe_vendor(self, name: str, context: str = "") -> dict:
         system = (
-            "You are a researcher building a database of AI industry players. "
+            "You are a researcher building a database of recurring news entities such as companies, people, "
+            "teams, political parties, public institutions, and products. "
             "Provide accurate, factual descriptions." + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Vendor name: {name}
@@ -281,7 +313,7 @@ Context from article: {context[:500]}
 Return JSON:
 {{
   "name": "canonical company name",
-  "description": "2-3 sentence description of this company's role in AI",
+  "description": "2-3 sentence description of this entity and why it matters",
   "aliases": ["alternative name 1", "ticker symbol"]
 }}"""
         raw = await self.complete(system, user, max_tokens=400, temperature=0.3)
@@ -307,14 +339,15 @@ If no pairs are duplicates, return an empty array: []"""
         result = self._parse_json(raw)
         return result if isinstance(result, list) else []
 
-    async def analyze_trends(self, entity_name: str, items: list[dict]) -> dict:
+    async def analyze_trends(self, entity_name: str, items: list[dict], topic_name: str | None = None) -> dict:
         items_json = json.dumps(items[:30], indent=2)
         system = (
-            "You are an AI industry trends analyst. Analyze the batch of news items and identify "
+            "You are a news trends analyst. Analyze the batch of news items and identify "
             "key developments, trajectories, and emerging patterns. Be balanced and grounded in the data."
             + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
         user = f"""Entity: {entity_name}
+Topic scope: {topic_name or "All topics"}
 
 News items (last 7 days):
 {items_json}
@@ -328,14 +361,16 @@ Return JSON:
         raw = await self.complete(system, user, max_tokens=2000, temperature=0.5)
         return self._parse_json(raw)
 
-    async def analyze_overall_trends(self, items: list[dict]) -> dict:
+    async def analyze_overall_trends(self, items: list[dict], topic_name: str | None = None) -> dict:
         items_json = json.dumps(items[:40], indent=2)
         system = (
-            "You are an AI industry analyst writing a weekly overview. Synthesize developments "
-            "across vendors and sectors into a clear, balanced narrative."
+            "You are a news analyst writing a weekly overview. Synthesize developments "
+            "across the selected topic into a clear, balanced narrative."
             + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
         )
-        user = f"""Top AI news items this period:
+        user = f"""Topic scope: {topic_name or "All topics"}
+
+Top news items this period:
 {items_json}
 
 Return JSON:
@@ -346,6 +381,31 @@ Return JSON:
 }}"""
         raw = await self.complete(system, user, max_tokens=2500, temperature=0.5)
         return self._parse_json(raw)
+
+    async def suggest_topic_sources(self, topic_name: str, topic_description: str = "") -> list[dict]:
+        system = (
+            "You are building a trusted news source list for a topic-focused news monitoring app. "
+            "Prefer reliable, established publications and topic-specialist outlets with real RSS feeds where possible. "
+            "Do not invent URLs. If unsure, omit the source."
+            + _NO_REASONING_INSTRUCTION + _JSON_INSTRUCTION
+        )
+        user = f"""Topic: {topic_name}
+Description: {topic_description or topic_name}
+
+Return a JSON array with 6 to 10 high-quality sources:
+[
+  {{
+    "name": "Publication name",
+    "url": "direct RSS or feed URL",
+    "feed_type": "rss or html",
+    "trust_weight": 0.5-2.0,
+    "css_selector": "optional CSS selector or null"
+  }}
+]
+"""
+        raw = await self.complete(system, user, max_tokens=1200, temperature=0.2)
+        data = self._parse_json(raw)
+        return data if isinstance(data, list) else []
 
 
 # Module-level singleton, initialized in main.py lifespan

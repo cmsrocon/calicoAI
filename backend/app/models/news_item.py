@@ -10,7 +10,8 @@ class NewsItem(Base):
     __tablename__ = "news_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    content_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    topic_id: Mapped[int] = mapped_column(Integer, ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
     external_url: Mapped[str] = mapped_column(Text, nullable=False)
     headline: Mapped[str] = mapped_column(Text, nullable=False)
     source_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sources.id", ondelete="SET NULL"), nullable=True)
@@ -18,6 +19,7 @@ class NewsItem(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     language: Mapped[str] = mapped_column(Text, nullable=False, default="en")
     raw_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_documents: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     why_it_matters: Mapped[str | None] = mapped_column(Text, nullable=True)
     importance_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -68,7 +68,7 @@ async def _fetch_rss(source_id: int, source_name: str, url: str) -> list[RawItem
 
 async def _fetch_html(source_id: int, source_name: str, url: str, css_selector: str | None) -> list[RawItem]:
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        resp = await client.get(url, headers={"User-Agent": "GingerAI/1.0 (+https://gingerai.app)"})
+        resp = await client.get(url, headers={"User-Agent": "calicoAI/1.1 (+https://calicoai.app)"})
         resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "lxml")
     items = []

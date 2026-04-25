@@ -4,37 +4,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vertical import Vertical
 
-DEFAULT_VERTICALS = [
-    ("Healthcare", "health"),
-    ("Finance", "dollar-sign"),
-    ("Legal", "scale"),
-    ("Education", "book-open"),
-    ("Manufacturing", "factory"),
-    ("Retail", "shopping-cart"),
-    ("Media", "tv"),
-    ("Government", "landmark"),
-    ("Defence", "shield"),
-    ("Transport", "truck"),
-    ("Cybersecurity", "lock"),
-    ("Energy", "zap"),
-    ("Life Sciences", "flask-conical"),
-    ("Research", "microscope"),
-    ("Telecoms", "radio"),
-]
-
-
-async def seed_verticals(db: AsyncSession) -> None:
-    for name, icon in DEFAULT_VERTICALS:
-        existing = (await db.execute(select(Vertical).where(Vertical.name == name))).scalar_one_or_none()
-        if not existing:
-            db.add(Vertical(name=name, slug=slugify(name), icon_name=icon))
-    await db.commit()
-
 
 async def get_or_create_vertical(db: AsyncSession, name: str) -> Vertical | None:
     result = await db.execute(select(Vertical).where(Vertical.name.ilike(name)))
-    v = result.scalar_one_or_none()
-    return v
+    vertical = result.scalar_one_or_none()
+    if vertical:
+        return vertical
+    slug = slugify(name) or "theme"
+    existing_slug = (await db.execute(select(Vertical).where(Vertical.slug == slug))).scalar_one_or_none()
+    if existing_slug:
+        slug = f"{slug}-{abs(hash(name)) % 1000}"
+    vertical = Vertical(name=name, slug=slug, icon_name=None)
+    db.add(vertical)
+    await db.flush()
+    return vertical
 
 
 async def list_verticals(db: AsyncSession, search: str = "") -> list[Vertical]:

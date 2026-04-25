@@ -1,8 +1,10 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Loader2, RefreshCw, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { fetchTopics } from '../../api/topics'
 import { fetchIngestionStatus, triggerIngestion } from '../../api/ingestion'
 import type { IngestionStatus } from '../../types'
+import { useFilterStore } from '../../store/filterStore'
 
 function fmt(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
@@ -155,14 +157,21 @@ function getProgressSnapshot(status: IngestionStatus | null, isTriggering: boole
 
 export default function StatusBar() {
   const queryClient = useQueryClient()
+  const { selectedTopicId } = useFilterStore()
+  const { data: topics } = useQuery({
+    queryKey: ['topics'],
+    queryFn: fetchTopics,
+  })
   const [status, setStatus] = useState<IngestionStatus | null>(null)
   const [isTriggering, setIsTriggering] = useState(false)
   const [showProgress, setShowProgress] = useState(false)
+  const [showRefreshMenu, setShowRefreshMenu] = useState(false)
   const [refreshProblem, setRefreshProblem] = useState<RefreshProblem | null>(null)
 
   const isRunningRef = useRef(false)
   const pollTimeoutRef = useRef<number | null>(null)
   const pollRef = useRef<() => Promise<void>>(async () => {})
+  const refreshMenuRef = useRef<HTMLDivElement | null>(null)
 
   const schedulePoll = (delayMs: number) => {
     if (pollTimeoutRef.current != null) {
@@ -216,7 +225,20 @@ export default function StatusBar() {
     }
   }, [])
 
-  const handleRefresh = async () => {
+  useEffect(() => {
+    if (!showRefreshMenu) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!refreshMenuRef.current?.contains(event.target as Node)) {
+        setShowRefreshMenu(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handlePointerDown)
+    return () => window.removeEventListener('mousedown', handlePointerDown)
+  }, [showRefreshMenu])
+
+  const handleRefresh = async (topicId?: number | null) => {
     if (isTriggering || status?.is_running) {
       setShowProgress(true)
       void pollRef.current()
@@ -225,11 +247,12 @@ export default function StatusBar() {
 
     setIsTriggering(true)
     setShowProgress(true)
+    setShowRefreshMenu(false)
     setRefreshProblem(null)
     isRunningRef.current = true
 
     try {
-      await triggerIngestion()
+      await triggerIngestion(topicId ?? undefined)
       schedulePoll(800)
     } catch (e: unknown) {
       const err = e as { response?: { status?: number, data?: { detail?: string } }, message?: string }
@@ -255,6 +278,17 @@ export default function StatusBar() {
   const isRunning = status?.is_running || isTriggering
   const liveTokens = (status?.live_tokens_in ?? 0) + (status?.live_tokens_out ?? 0)
   const progress = getProgressSnapshot(status, isTriggering)
+  const selectedTopic = topics?.find((topic) => topic.id === selectedTopicId) ?? null
+
+  const handleRefreshButtonClick = () => {
+    if (isRunning) {
+      setShowProgress(true)
+      void pollRef.current()
+      return
+    }
+
+    setShowRefreshMenu((current) => !current)
+  }
 
   return (
     <div className="flex flex-col items-end gap-2 text-xs text-stone-500">
@@ -284,10 +318,10 @@ export default function StatusBar() {
           </span>
         )}
 
-        <div className="relative">
+        <div ref={refreshMenuRef} className="relative">
           <button
-            onClick={handleRefresh}
-            title={isRunning ? 'Show live ingestion progress' : 'Start a refresh run'}
+            onClick={handleRefreshButtonClick}
+            title={isRunning ? 'Show live ingestion progress' : 'Choose refresh scope'}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
               isRunning
                 ? 'bg-stone-800 hover:bg-stone-700 text-orange-400'
@@ -299,14 +333,45 @@ export default function StatusBar() {
             {progress && (
               <span className="text-stone-400">{progress.percent}%</span>
             )}
-            <ChevronDown className={`w-3 h-3 text-stone-500 transition-transform ${showProgress ? 'rotate-180' : ''}`} />
+            <ChevronDown
+              className={`w-3 h-3 text-stone-500 transition-transform ${(showProgress || showRefreshMenu) ? 'rotate-180' : ''}`}
+            />
           </button>
+
+          {showRefreshMenu && !isRunning && (
+            <div className="absolute right-0 top-full mt-1 w-72 bg-stone-900 border border-stone-700 rounded-lg p-2 z-50 shadow-xl space-y-1">
+              <button
+                type="button"
+                disabled={!selectedTopic}
+                onClick={() => void handleRefresh(selectedTopicId)}
+                className={`w-full rounded-md px-3 py-2 text-left transition-colors ${
+                  selectedTopic
+                    ? 'hover:bg-stone-800'
+                    : 'cursor-not-allowed opacity-50'
+                }`}
+              >
+                <p className="text-sm font-medium text-stone-100">Refresh current topic</p>
+                <p className="text-xs text-stone-500">
+                  {selectedTopic ? `Only ingest ${selectedTopic.name}.` : 'Select a topic filter first.'}
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleRefresh()}
+                className="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-stone-800"
+              >
+                <p className="text-sm font-medium text-stone-100">Refresh all topics</p>
+                <p className="text-xs text-stone-500">Run ingestion across every active topic source.</p>
+              </button>
+            </div>
+          )}
 
           {showProgress && (isRunning || refreshProblem) && (
             <div className="absolute right-0 top-full mt-1 w-[26rem] bg-stone-900 border border-stone-700 rounded-lg p-4 z-50 shadow-xl space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-stone-200">
-                  {isRunning ? 'Ingestion progress' : 'Refresh status'}
+                  {isRunning ? 'Refresh progress' : 'Refresh status'}
                 </p>
                 <button onClick={() => setShowProgress(false)} className="text-stone-600 hover:text-stone-300">
                   <X className="w-3 h-3" />

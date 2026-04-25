@@ -42,7 +42,7 @@ export default function BalancedTake({ pros, cons, balancedTake }: Props) {
         <div className="bg-stone-900 border border-stone-700 rounded-lg p-3">
           <div className="flex items-center gap-1.5 mb-2">
             <Scale className="w-3.5 h-3.5 text-orange-400" />
-            <span className="text-xs font-semibold text-orange-400 uppercase tracking-wide">Balanced take</span>
+            <span className="text-xs font-semibold text-orange-400 uppercase tracking-wide">Balanced view</span>
           </div>
           <p className="text-xs text-stone-300 leading-relaxed">{balancedTake}</p>
         </div>

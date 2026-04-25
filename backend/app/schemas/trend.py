@@ -7,6 +7,8 @@ class TrendResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    topic_id: int | None = None
+    topic_name: str | None = None
     trend_type: str
     entity_id: int | None = None
     period_start: datetime

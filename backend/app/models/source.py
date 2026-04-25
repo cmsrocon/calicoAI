@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -10,7 +10,8 @@ class Source(Base):
     __tablename__ = "sources"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    topic_id: Mapped[int] = mapped_column(Integer, ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     feed_type: Mapped[str] = mapped_column(Text, nullable=False, default="rss")  # rss | html
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

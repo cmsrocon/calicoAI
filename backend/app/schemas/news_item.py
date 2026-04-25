@@ -18,10 +18,21 @@ class NewsItemVerticalInfo(BaseModel):
     confidence: float
 
 
+class StorySourceDocument(BaseModel):
+    url: str
+    source_name: str | None = None
+    headline: str
+    published_at: datetime | None = None
+    is_primary: bool = False
+
+
 class NewsItemSummary(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    topic_id: int
+    topic_name: str
+    topic_slug: str
     headline: str
     external_url: str
     source_id: int | None = None
@@ -33,6 +44,7 @@ class NewsItemSummary(BaseModel):
     why_it_matters: str | None = None
     importance_rank: int | None = None
     ai_relevance_score: float | None = None
+    source_documents: list[StorySourceDocument] = []
     vendors: list[NewsItemVendorInfo] = []
     verticals: list[NewsItemVerticalInfo] = []
 

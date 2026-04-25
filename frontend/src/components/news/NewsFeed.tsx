@@ -8,6 +8,7 @@ import NewsCard from './NewsCard'
 export default function NewsFeed() {
   const filters = useFilterStore()
   const queryFilters = {
+    topic_id: filters.selectedTopicId || undefined,
     search: filters.search || undefined,
     sort_by: filters.sortBy,
     min_importance: filters.minImportance || undefined,
@@ -34,7 +35,9 @@ export default function NewsFeed() {
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-stone-500">{data.total} items</p>
+      <p className="text-xs text-stone-500">
+        {data.total} items{filters.selectedTopicId ? ' in selected topic' : ' across all topics'}
+      </p>
       {data.items.map((item) => (
         <NewsCard key={item.id} item={item} />
       ))}

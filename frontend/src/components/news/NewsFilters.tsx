@@ -1,13 +1,21 @@
 import { useFilterStore } from '../../store/filterStore'
+import TopicSelect from '../shared/TopicSelect'
 
 export default function NewsFilters() {
-  const { dateFrom, dateTo, minImportance, sortBy, setFilter, resetFilters } = useFilterStore()
+  const { selectedTopicId, dateFrom, dateTo, minImportance, sortBy, setFilter, resetFilters } = useFilterStore()
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide">Filters</p>
         <button onClick={resetFilters} className="text-xs text-stone-500 hover:text-orange-400 transition-colors">Reset</button>
+      </div>
+
+      <div>
+        <TopicSelect
+          value={selectedTopicId}
+          onChange={(value) => setFilter('selectedTopicId', value)}
+        />
       </div>
 
       <div>

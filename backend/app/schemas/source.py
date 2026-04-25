@@ -4,6 +4,7 @@ from pydantic import BaseModel, HttpUrl
 
 
 class SourceBase(BaseModel):
+    topic_id: int
     url: str
     name: str
     feed_type: str = "rss"
@@ -28,6 +29,7 @@ class SourceResponse(SourceBase):
     model_config = {"from_attributes": True}
 
     id: int
+    topic_name: str | None = None
     last_fetched_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime

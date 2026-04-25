@@ -18,6 +18,7 @@ function timeAgo(dateStr: string): string {
 
 export default function NewsCard({ item }: Props) {
   const { openDetail, setActiveTab } = useUIStore()
+  const sourceCount = item.source_documents.length || (item.source_name ? 1 : 0)
 
   return (
     <article
@@ -28,8 +29,14 @@ export default function NewsCard({ item }: Props) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <ImportanceBadge rank={item.importance_rank} />
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-800/60">
+              {item.topic_name}
+            </span>
             {item.source_name && (
               <span className="text-xs text-stone-500">{item.source_name}</span>
+            )}
+            {sourceCount > 1 && (
+              <span className="text-xs text-sky-300">{sourceCount} sources</span>
             )}
             <span className="text-xs text-stone-600">
               {timeAgo(item.published_at || item.ingested_at)}

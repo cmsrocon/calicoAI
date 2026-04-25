@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -10,6 +10,7 @@ class Trend(Base):
     __tablename__ = "trends"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    topic_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("topics.id", ondelete="CASCADE"), nullable=True)
     trend_type: Mapped[str] = mapped_column(Text, nullable=False)  # vendor | vertical | overall
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # vendor_id or vertical_id
     period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)

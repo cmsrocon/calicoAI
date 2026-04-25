@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 interface FilterState {
+  selectedTopicId: number | null
   dateFrom: string
   dateTo: string
   vendorIds: number[]
@@ -18,6 +19,7 @@ interface FilterState {
 }
 
 const defaults = {
+  selectedTopicId: null as number | null,
   dateFrom: '',
   dateTo: '',
   vendorIds: [] as number[],

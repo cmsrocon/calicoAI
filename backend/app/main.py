@@ -1,18 +1,15 @@
 import json
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 
 from app.api.router import api_router
 from app.database import async_session_factory, init_db
-from app.models import Source
 from app.scheduler import start_scheduler
 from app.services.llm_service import set_llm_service
-from app.services.vertical_service import seed_verticals
+from app.services.topic_service import ensure_default_topic, seed_default_topic_sources
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -22,18 +19,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     await init_db()
     async with async_session_factory() as db:
-        # Seed default sources
-        seeds_path = Path(__file__).parent.parent / "seeds" / "default_sources.json"
-        if seeds_path.exists():
-            sources_data = json.loads(seeds_path.read_text())
-            for s in sources_data:
-                existing = (await db.execute(select(Source).where(Source.url == s["url"]))).scalar_one_or_none()
-                if not existing:
-                    db.add(Source(**s))
-            await db.commit()
-
-        # Seed verticals
-        await seed_verticals(db)
+        # Ensure the original AI monitor becomes the default topic, then attach the curated starter sources to it.
+        default_topic = await ensure_default_topic(db)
+        await seed_default_topic_sources(db, default_topic.id)
 
         # Load LLM settings (keys from DB take priority over .env)
         from app.api.settings import load_raw_settings, _build_llm
@@ -53,7 +41,7 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="GingerAI", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="calicoAI", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,4 +56,4 @@ app.include_router(api_router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.1.0"}

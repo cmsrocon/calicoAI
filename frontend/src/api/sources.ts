@@ -1,8 +1,8 @@
 import type { Source } from '../types'
 import client from './client'
 
-export async function fetchSources(): Promise<Source[]> {
-  const { data } = await client.get('/sources')
+export async function fetchSources(topicId?: number): Promise<Source[]> {
+  const { data } = await client.get('/sources', { params: topicId ? { topic_id: topicId } : {} })
   return data
 }
 

@@ -5,8 +5,10 @@ export async function fetchIngestionStatus() {
   return data
 }
 
-export async function triggerIngestion() {
-  const { data } = await client.post('/ingestion/trigger')
+export async function triggerIngestion(topicId?: number) {
+  const { data } = await client.post('/ingestion/trigger', null, {
+    params: topicId ? { topic_id: topicId } : {},
+  })
   return data
 }
 
