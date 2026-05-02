@@ -14,6 +14,8 @@ class IngestionRunResponse(BaseModel):
     items_new: int
     items_duplicate: int
     triggered_by: str
+    user_id: int | None = None
+    topic_id: int | None = None
     error_message: str | None = None
     llm_calls: int = 0
     tokens_in: int = 0
@@ -38,3 +40,4 @@ class IngestionStatusResponse(BaseModel):
 class TriggerResponse(BaseModel):
     run_id: int
     message: str
+    reused_existing_run: bool = False

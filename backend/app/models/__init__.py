@@ -6,6 +6,10 @@ from app.models.vertical import Vertical
 from app.models.news_item import NewsItem, NewsItemVendor, NewsItemVertical
 from app.models.trend import Trend
 from app.models.app_setting import AppSetting
+from app.models.user import User
+from app.models.user_activity import UserActivity
+from app.models.user_session import UserSession
+from app.models.token_usage_ledger import TokenUsageLedger
 
 __all__ = [
     "Source",
@@ -18,4 +22,8 @@ __all__ = [
     "NewsItemVertical",
     "Trend",
     "AppSetting",
+    "User",
+    "UserActivity",
+    "UserSession",
+    "TokenUsageLedger",
 ]

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -17,6 +17,8 @@ class IngestionRun(Base):
     items_new: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     items_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     triggered_by: Mapped[str] = mapped_column(Text, nullable=False, default="manual")  # scheduler | manual
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    topic_id: Mapped[int | None] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     llm_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

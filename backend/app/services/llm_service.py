@@ -46,13 +46,14 @@ class LLMService:
     _OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
     def __init__(self, provider: str, model: str, anthropic_api_key: str = "", openai_api_key: str = "",
-                 minimax_api_key: str = "", ollama_base_url: str = ""):
+                 minimax_api_key: str = "", ollama_base_url: str = "", usage_tracker=None):
         self.provider = provider
         self.model = model
         self._anthropic_key = anthropic_api_key
         self._openai_key = openai_api_key
         self._minimax_key = minimax_api_key
         self._ollama_base_url = ollama_base_url or self._OLLAMA_BASE_URL
+        self._usage_tracker = usage_tracker
         self._anthropic_client = None
         self._openai_client = None
         self._minimax_client = None
@@ -68,15 +69,41 @@ class LLMService:
         self._session_tokens_out = 0
 
     def get_session_stats(self) -> dict:
-        pricing = _PRICING.get(self.model, (3.0, 15.0))
-        cost = (self._session_tokens_in / 1_000_000 * pricing[0] +
-                self._session_tokens_out / 1_000_000 * pricing[1])
+        cost = self._estimate_cost(self._session_tokens_in, self._session_tokens_out)
         return {
             "calls": self._session_calls,
             "tokens_in": self._session_tokens_in,
             "tokens_out": self._session_tokens_out,
             "estimated_cost_usd": round(cost, 6),
         }
+
+    def fork(self, usage_tracker=None) -> "LLMService":
+        return LLMService(
+            provider=self.provider,
+            model=self.model,
+            anthropic_api_key=self._anthropic_key,
+            openai_api_key=self._openai_key,
+            minimax_api_key=self._minimax_key,
+            ollama_base_url=self._ollama_base_url,
+            usage_tracker=usage_tracker,
+        )
+
+    def _estimate_cost(self, tokens_in: int, tokens_out: int) -> float:
+        pricing = _PRICING.get(self.model, (3.0, 15.0))
+        return (tokens_in / 1_000_000 * pricing[0] + tokens_out / 1_000_000 * pricing[1])
+
+    async def _before_call(self, max_tokens: int) -> None:
+        if self._usage_tracker is not None:
+            await self._usage_tracker.before_call(max_tokens)
+
+    async def _record_usage(self, tokens_in: int, tokens_out: int) -> None:
+        if self._usage_tracker is not None:
+            await self._usage_tracker.record_call(
+                self.model,
+                tokens_in,
+                tokens_out,
+                round(self._estimate_cost(tokens_in, tokens_out), 6),
+            )
 
     def _get_anthropic(self):
         if self._anthropic_client is None:
@@ -129,6 +156,7 @@ class LLMService:
         raise RuntimeError("LLM call failed after 3 attempts")
 
     async def _complete_anthropic(self, system: str, user: str, max_tokens: int, temperature: float) -> str:
+        await self._before_call(max_tokens)
         client = self._get_anthropic()
         msg = await client.messages.create(
             model=self.model,
@@ -140,9 +168,11 @@ class LLMService:
         self._session_calls += 1
         self._session_tokens_in += msg.usage.input_tokens
         self._session_tokens_out += msg.usage.output_tokens
+        await self._record_usage(msg.usage.input_tokens, msg.usage.output_tokens)
         return msg.content[0].text
 
     async def _complete_openai_compat(self, client, system: str, user: str, max_tokens: int, temperature: float) -> str:
+        await self._before_call(max_tokens)
         resp = await client.chat.completions.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -156,6 +186,7 @@ class LLMService:
         if resp.usage:
             self._session_tokens_in += resp.usage.prompt_tokens
             self._session_tokens_out += resp.usage.completion_tokens
+            await self._record_usage(resp.usage.prompt_tokens, resp.usage.completion_tokens)
         content = resp.choices[0].message.content or ""
         cleaned = self._strip_reasoning_blocks(content)
         return cleaned or content

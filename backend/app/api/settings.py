@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings as app_config
 from app.database import get_db
 from app.models.app_setting import AppSetting
+from app.services.auth_service import UserUsageTracker, require_admin_user
 from app.services.llm_service import LLMService, get_llm_service, set_llm_service
 from app.utils.date_utils import utcnow
 
@@ -80,12 +81,12 @@ def _contains_reasoning_markup(text: str) -> bool:
 
 
 @router.get("")
-async def get_settings(db: AsyncSession = Depends(get_db)):
+async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     return await load_settings(db)
 
 
 @router.patch("")
-async def update_settings(body: dict, db: AsyncSession = Depends(get_db)):
+async def update_settings(body: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     for key, value in body.items():
         # Never store a masked placeholder back — user didn't change the key
         if key in _SECRET_KEYS and _is_masked(str(value)):
@@ -103,7 +104,7 @@ async def update_settings(body: dict, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/health")
-async def settings_health(db: AsyncSession = Depends(get_db)):
+async def settings_health(db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     raw = await load_raw_settings(db)
     provider = raw["llm_provider"]
     model = raw["llm_model"]
@@ -124,7 +125,7 @@ async def settings_health(db: AsyncSession = Depends(get_db)):
     overall = "ok"
 
     # Build a fresh LLM service for the test so token counts are isolated
-    test_llm = _build_llm(raw)
+    test_llm = _build_llm(raw).fork(UserUsageTracker(user.id, "settings.health_check"))
     test_llm.reset_session()
 
     def record(name: str, status: str, detail: str, latency_ms: int = 0):

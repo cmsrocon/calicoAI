@@ -22,12 +22,14 @@ calicoAI is a multi-topic news monitor that fetches articles from trusted source
 2. [Getting the code](#getting-the-code)
 3. [Backend setup](#backend-setup)
 4. [Frontend setup](#frontend-setup)
-5. [API keys and providers](#api-keys-and-providers)
-6. [First run](#first-run)
-7. [Daily automation](#daily-automation)
-8. [Environment variables](#environment-variables)
-9. [Architecture](#architecture)
-10. [Troubleshooting](#troubleshooting)
+5. [Production security](#production-security)
+6. [API keys and providers](#api-keys-and-providers)
+7. [First run](#first-run)
+8. [Daily automation](#daily-automation)
+9. [Environment variables](#environment-variables)
+10. [Oracle Cloud deployment](#oracle-cloud-deployment)
+11. [Architecture](#architecture)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -98,6 +100,24 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+---
+
+## Production security
+
+The app now supports multi-user production access with role-based controls:
+
+- login is required for every API except health and authentication
+- secure session cookies are paired with CSRF protection for write operations
+- a bootstrap `superadmin` account is created from environment variables
+- `superadmin` users can create, disable, delete, and inspect other users
+- `admin` and `superadmin` users can change settings, manage topics/sources, and trigger refresh jobs
+- per-user token usage is tracked across a rolling quota window and enforced before LLM calls
+- authenticated request activity is logged for superadmin review
+- duplicate topic creation reuses the shared topic instead of reseeding sources
+- duplicate refresh requests reuse an in-flight or recently completed shared run instead of calling the LLM stack again
+
+For production, do not keep the SQLite default. Use PostgreSQL and HTTPS.
 
 ---
 
@@ -181,6 +201,44 @@ Create `backend/.env` from `backend/.env.example`.
 | `MINIMAX_API_KEY` | - | Required for MiniMax |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Override if Ollama runs elsewhere |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./ginger.db` | SQLite database path |
+| `ENVIRONMENT` | `development` | Set to `production` in Oracle Cloud |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated frontend origins |
+| `TRUSTED_HOSTS` | `localhost,127.0.0.1` | Allowed hostnames for incoming requests |
+| `REQUIRE_HTTPS_COOKIES` | `false` | Must be `true` in production |
+| `SESSION_TTL_HOURS` | `12` | Absolute session lifetime |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | `60` | Idle timeout for authenticated sessions |
+| `SESSION_COOKIE_SAME_SITE` | `lax` | Cookie same-site policy |
+| `TOKEN_QUOTA_WINDOW_DAYS` | `30` | Rolling quota window |
+| `REFRESH_COOLDOWN_MINUTES` | `30` | Reuse recent topic refreshes inside this window |
+| `SUPERADMIN_EMAIL` | - | Required in production |
+| `SUPERADMIN_PASSWORD` | - | Required in production |
+| `SUPERADMIN_NAME` | - | Required in production |
+
+---
+
+## Oracle Cloud deployment
+
+Recommended production shape:
+
+1. Host the FastAPI backend on OCI Compute, Container Instances, or OKE.
+2. Host the Vite frontend behind the same domain or a controlled subdomain.
+3. Use PostgreSQL for production, for example an OCI-managed PostgreSQL deployment or a PostgreSQL VM.
+4. Terminate TLS at OCI Load Balancer and set `REQUIRE_HTTPS_COOKIES=true`.
+5. Set `ENVIRONMENT=production`, restrict `CORS_ALLOWED_ORIGINS`, and set exact `TRUSTED_HOSTS`.
+
+Example production database URL:
+
+```env
+DATABASE_URL=postgresql+asyncpg://calico_user:strong-password@postgres.internal:5432/calicoai
+```
+
+Bring the backend up with migrations before starting the app:
+
+```powershell
+cd backend
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
 ---
 
@@ -302,4 +360,3 @@ Then stop the conflicting process or switch ports.
 - Backend running on `8000`
 - Frontend dependencies installed
 - Frontend running on `5173`
-

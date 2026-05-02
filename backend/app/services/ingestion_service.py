@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
+from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.ingestion_run import IngestionRun
 from app.models.news_item import NewsItem, NewsItemVendor, NewsItemVertical
 from app.models.source import Source
@@ -27,6 +29,7 @@ _is_running = False
 _current_stage: str = ""
 _current_stage_detail: str = ""
 _last_error: str | None = None
+_current_topic_id: int | None = None
 
 
 def is_running() -> bool:
@@ -41,6 +44,29 @@ def get_progress() -> dict:
     if _llm_ref is not None:
         base.update(_llm_ref.get_session_stats())
     return base
+
+
+def should_reuse_active_run(topic_id: int | None) -> bool:
+    if not _is_running:
+        return False
+    if _current_topic_id is None:
+        return True
+    return _current_topic_id == topic_id
+
+
+async def get_recent_matching_run(db: AsyncSession, topic_id: int | None) -> IngestionRun | None:
+    window_start = utcnow() - timedelta(minutes=settings.refresh_cooldown_minutes)
+    query = select(IngestionRun).where(
+        IngestionRun.status == "success",
+        IngestionRun.finished_at.is_not(None),
+        IngestionRun.finished_at >= window_start,
+    )
+    if topic_id is None:
+        query = query.where(IngestionRun.topic_id.is_(None))
+    else:
+        query = query.where(or_(IngestionRun.topic_id == topic_id, IngestionRun.topic_id.is_(None)))
+    query = query.order_by(IngestionRun.finished_at.desc())
+    return (await db.execute(query)).scalars().first()
 
 
 def _is_db_locked(exc: Exception) -> bool:
@@ -101,9 +127,21 @@ def _load_source_documents(raw: str | None, fallback: dict | None = None) -> lis
     return [fallback] if fallback else []
 
 
-async def _create_run_with_retry(db: AsyncSession, triggered_by: str, attempts: int = 5) -> IngestionRun:
+async def _create_run_with_retry(
+    db: AsyncSession,
+    triggered_by: str,
+    topic_id: int | None,
+    user_id: int | None,
+    attempts: int = 5,
+) -> IngestionRun:
     for attempt in range(attempts):
-        run = IngestionRun(triggered_by=triggered_by, status="running", started_at=utcnow())
+        run = IngestionRun(
+            triggered_by=triggered_by,
+            status="running",
+            started_at=utcnow(),
+            topic_id=topic_id,
+            user_id=user_id,
+        )
         db.add(run)
         try:
             await db.commit()
@@ -124,17 +162,19 @@ async def run_ingestion(
     llm: LLMService,
     triggered_by: str = "manual",
     topic_id: int | None = None,
+    user_id: int | None = None,
 ) -> int:
-    global _is_running, _current_stage, _current_stage_detail, _llm_ref, _last_error
+    global _is_running, _current_stage, _current_stage_detail, _llm_ref, _last_error, _current_topic_id
     if _is_running:
         raise RuntimeError("Ingestion is already running")
     _is_running = True
+    _current_topic_id = topic_id
     _llm_ref = llm
     _last_error = None
     run_id: int | None = None
 
     try:
-        run = await _create_run_with_retry(db, triggered_by)
+        run = await _create_run_with_retry(db, triggered_by, topic_id, user_id)
         run_id = run.id
         llm.reset_session()
         await _execute_pipeline(db, llm, run_id, topic_id=topic_id)
@@ -154,6 +194,7 @@ async def run_ingestion(
         _current_stage = ""
         _current_stage_detail = ""
         _is_running = False
+        _current_topic_id = None
         _llm_ref = None
 
     if run_id is None:

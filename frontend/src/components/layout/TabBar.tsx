@@ -1,5 +1,6 @@
-import { BarChart2, Building2, Layers, Settings, Share2, TrendingUp } from 'lucide-react'
+import { BarChart2, Building2, Layers, Settings, Shield, Share2, TrendingUp } from 'lucide-react'
 import { useUIStore } from '../../store/uiStore'
+import { useAuth } from '../auth/AuthProvider'
 
 const tabs = [
   { id: 'news' as const, label: 'Daily News', icon: BarChart2 },
@@ -8,13 +9,20 @@ const tabs = [
   { id: 'trends' as const, label: 'Trends', icon: TrendingUp },
   { id: 'graph' as const, label: 'Graph', icon: Share2 },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
+  { id: 'admin' as const, label: 'Admin', icon: Shield },
 ]
 
 export default function TabBar() {
   const { activeTab, setActiveTab } = useUIStore()
+  const { user } = useAuth()
+  const visibleTabs = tabs.filter((tab) => {
+    if (tab.id === 'settings') return user?.role === 'admin' || user?.role === 'superadmin'
+    if (tab.id === 'admin') return user?.role === 'superadmin'
+    return true
+  })
   return (
     <nav className="flex gap-1">
-      {tabs.map(({ id, label, icon: Icon }) => (
+      {visibleTabs.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
           onClick={() => setActiveTab(id)}

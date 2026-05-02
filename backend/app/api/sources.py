@@ -7,6 +7,7 @@ from app.models.source import Source
 from app.models.topic import Topic
 from app.schemas.source import SourceCreate, SourceResponse, SourceTestResult, SourceUpdate
 from app.services.scraper_service import test_source
+from app.services.auth_service import require_admin_user
 from app.services.topic_service import get_topic
 from app.utils.date_utils import utcnow
 
@@ -41,7 +42,7 @@ async def list_sources(topic_id: int | None = Query(None), db: AsyncSession = De
 
 
 @router.post("", response_model=SourceResponse, status_code=201)
-async def create_source(body: SourceCreate, db: AsyncSession = Depends(get_db)):
+async def create_source(body: SourceCreate, db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     topic = await get_topic(db, body.topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
@@ -72,7 +73,7 @@ async def create_source(body: SourceCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{source_id}", response_model=SourceResponse)
-async def update_source(source_id: int, body: SourceUpdate, db: AsyncSession = Depends(get_db)):
+async def update_source(source_id: int, body: SourceUpdate, db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     source = (await db.execute(select(Source).where(Source.id == source_id))).scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -100,7 +101,7 @@ async def update_source(source_id: int, body: SourceUpdate, db: AsyncSession = D
 
 
 @router.delete("/{source_id}", status_code=204)
-async def delete_source(source_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_source(source_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     source = (await db.execute(select(Source).where(Source.id == source_id))).scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -109,7 +110,7 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{source_id}/test", response_model=SourceTestResult)
-async def test_source_endpoint(source_id: int, db: AsyncSession = Depends(get_db)):
+async def test_source_endpoint(source_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_admin_user)):
     source = (await db.execute(select(Source).where(Source.id == source_id))).scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")

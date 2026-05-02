@@ -170,6 +170,42 @@ export interface IngestionStatus {
   live_cost_usd: number | null
 }
 
+export interface UserQuotaSummary {
+  used_tokens: number
+  monthly_token_limit: number | null
+  remaining_tokens: number | null
+  window_days: number
+}
+
+export interface CurrentUser {
+  id: number
+  email: string
+  full_name: string
+  role: 'user' | 'admin' | 'superadmin'
+  is_active: boolean
+  last_login_at: string | null
+  quota: UserQuotaSummary
+}
+
+export interface AdminUser extends CurrentUser {
+  created_at: string
+  updated_at: string
+}
+
+export interface UserActivity {
+  id: number
+  user_id: number | null
+  user_email: string | null
+  action: string
+  method: string
+  path: string
+  status_code: number
+  ip_address: string | null
+  user_agent: string | null
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
 export interface Topic {
   id: number
   name: string

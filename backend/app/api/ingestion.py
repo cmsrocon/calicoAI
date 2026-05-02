@@ -12,6 +12,7 @@ from app.models.ingestion_run import IngestionRun
 from app.models.topic import Topic
 from app.schemas.ingestion import IngestionRunResponse, IngestionStatusResponse, TriggerResponse
 from app.services import ingestion_service
+from app.services.auth_service import TokenQuotaExceededError, UserUsageTracker, require_admin_user
 from app.services.llm_service import get_llm_service
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
@@ -108,11 +109,13 @@ async def trigger_ingestion(
     background_tasks: BackgroundTasks,
     topic_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    user=Depends(require_admin_user),
 ):
+    if ingestion_service.should_reuse_active_run(topic_id):
+        return TriggerResponse(run_id=0, message="A matching refresh is already in progress", reused_existing_run=True)
     if ingestion_service.is_running():
-        raise HTTPException(status_code=409, detail="Ingestion is already running")
+        raise HTTPException(status_code=409, detail="A refresh is already running for a different scope")
     await _validate_trigger_request()
-    llm = get_llm_service()
     topic_name: str | None = None
 
     if topic_id is not None:
@@ -121,10 +124,22 @@ async def trigger_ingestion(
             raise HTTPException(status_code=404, detail="Topic not found")
         topic_name = topic.name
 
+    cached_run = await ingestion_service.get_recent_matching_run(db, topic_id)
+    if cached_run is not None:
+        return TriggerResponse(
+            run_id=cached_run.id,
+            message="Using the most recent refresh result for this scope",
+            reused_existing_run=True,
+        )
+
+    llm = get_llm_service().fork(UserUsageTracker(user.id, f"ingestion.trigger:{topic_id or 'all'}"))
+
     async def run_bg():
         async with async_session_factory() as db:
             try:
-                await ingestion_service.run_ingestion(db, llm, triggered_by="manual", topic_id=topic_id)
+                await ingestion_service.run_ingestion(db, llm, triggered_by="manual", topic_id=topic_id, user_id=user.id)
+            except TokenQuotaExceededError as exc:
+                logger.warning("Manual ingestion stopped because the user's token quota was exceeded: %s", exc)
             except Exception:
                 logger.exception("Manual ingestion task failed before progress state could be persisted")
 
@@ -153,16 +168,16 @@ async def list_runs(
 
 
 @router.post("/retry-failed")
-async def retry_failed(background_tasks: BackgroundTasks):
+async def retry_failed(background_tasks: BackgroundTasks, user=Depends(require_admin_user)):
     if ingestion_service.is_running():
         raise HTTPException(status_code=409, detail="Ingestion is already running")
     await _validate_trigger_request()
-    llm = get_llm_service()
+    llm = get_llm_service().fork(UserUsageTracker(user.id, "ingestion.retry_failed"))
 
     async def run_bg():
         async with async_session_factory() as session:
             try:
-                await ingestion_service.run_ingestion(session, llm, triggered_by="retry")
+                await ingestion_service.run_ingestion(session, llm, triggered_by="retry", user_id=user.id)
             except Exception:
                 logger.exception("Retry ingestion task failed before progress state could be persisted")
 

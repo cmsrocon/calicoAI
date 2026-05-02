@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type Tab = 'news' | 'vendors' | 'verticals' | 'trends' | 'graph' | 'settings'
+type Tab = 'news' | 'vendors' | 'verticals' | 'trends' | 'graph' | 'settings' | 'admin'
 
 interface UIState {
   activeTab: Tab

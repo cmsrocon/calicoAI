@@ -5,6 +5,7 @@ import { fetchTopics } from '../../api/topics'
 import { fetchIngestionStatus, triggerIngestion } from '../../api/ingestion'
 import type { IngestionStatus } from '../../types'
 import { useFilterStore } from '../../store/filterStore'
+import { useAuth } from '../auth/AuthProvider'
 
 function fmt(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M`
@@ -157,6 +158,8 @@ function getProgressSnapshot(status: IngestionStatus | null, isTriggering: boole
 
 export default function StatusBar() {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const canTrigger = user?.role === 'admin' || user?.role === 'superadmin'
   const { selectedTopicId } = useFilterStore()
   const { data: topics } = useQuery({
     queryKey: ['topics'],
@@ -319,52 +322,56 @@ export default function StatusBar() {
         )}
 
         <div ref={refreshMenuRef} className="relative">
-          <button
-            onClick={handleRefreshButtonClick}
-            title={isRunning ? 'Show live ingestion progress' : 'Choose refresh scope'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
-              isRunning
-                ? 'bg-stone-800 hover:bg-stone-700 text-orange-400'
-                : 'bg-stone-800 hover:bg-stone-700 text-stone-300'
-            }`}
-          >
-            {isRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            <span>{isRunning ? 'Running' : 'Refresh'}</span>
-            {progress && (
-              <span className="text-stone-400">{progress.percent}%</span>
-            )}
-            <ChevronDown
-              className={`w-3 h-3 text-stone-500 transition-transform ${(showProgress || showRefreshMenu) ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {showRefreshMenu && !isRunning && (
-            <div className="absolute right-0 top-full mt-1 w-72 bg-stone-900 border border-stone-700 rounded-lg p-2 z-50 shadow-xl space-y-1">
+          {canTrigger && (
+            <>
               <button
-                type="button"
-                disabled={!selectedTopic}
-                onClick={() => void handleRefresh(selectedTopicId)}
-                className={`w-full rounded-md px-3 py-2 text-left transition-colors ${
-                  selectedTopic
-                    ? 'hover:bg-stone-800'
-                    : 'cursor-not-allowed opacity-50'
+                onClick={handleRefreshButtonClick}
+                title={isRunning ? 'Show live ingestion progress' : 'Choose refresh scope'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+                  isRunning
+                    ? 'bg-stone-800 hover:bg-stone-700 text-orange-400'
+                    : 'bg-stone-800 hover:bg-stone-700 text-stone-300'
                 }`}
               >
-                <p className="text-sm font-medium text-stone-100">Refresh current topic</p>
-                <p className="text-xs text-stone-500">
-                  {selectedTopic ? `Only ingest ${selectedTopic.name}.` : 'Select a topic filter first.'}
-                </p>
+                {isRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                <span>{isRunning ? 'Running' : 'Refresh'}</span>
+                {progress && (
+                  <span className="text-stone-400">{progress.percent}%</span>
+                )}
+                <ChevronDown
+                  className={`w-3 h-3 text-stone-500 transition-transform ${(showProgress || showRefreshMenu) ? 'rotate-180' : ''}`}
+                />
               </button>
 
-              <button
-                type="button"
-                onClick={() => void handleRefresh()}
-                className="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-stone-800"
-              >
-                <p className="text-sm font-medium text-stone-100">Refresh all topics</p>
-                <p className="text-xs text-stone-500">Run ingestion across every active topic source.</p>
-              </button>
-            </div>
+              {showRefreshMenu && !isRunning && (
+                <div className="absolute right-0 top-full mt-1 w-72 bg-stone-900 border border-stone-700 rounded-lg p-2 z-50 shadow-xl space-y-1">
+                  <button
+                    type="button"
+                    disabled={!selectedTopic}
+                    onClick={() => void handleRefresh(selectedTopicId)}
+                    className={`w-full rounded-md px-3 py-2 text-left transition-colors ${
+                      selectedTopic
+                        ? 'hover:bg-stone-800'
+                        : 'cursor-not-allowed opacity-50'
+                    }`}
+                  >
+                    <p className="text-sm font-medium text-stone-100">Refresh current topic</p>
+                    <p className="text-xs text-stone-500">
+                      {selectedTopic ? `Only ingest ${selectedTopic.name}.` : 'Select a topic filter first.'}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleRefresh()}
+                    className="w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-stone-800"
+                  >
+                    <p className="text-sm font-medium text-stone-100">Refresh all topics</p>
+                    <p className="text-xs text-stone-500">Run ingestion across every active topic source.</p>
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {showProgress && (isRunning || refreshProblem) && (
